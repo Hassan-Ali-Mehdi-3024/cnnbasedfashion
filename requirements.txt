@@ -6,4 +6,5 @@ matplotlib==3.10.8
 kaggle==1.7.4.5
 tqdm==4.67.1
 streamlit==1.40.2
-pillow==12.0.0
+# Pillow version must satisfy both matplotlib (>=8) and streamlit (<12)
+pillow==11.1.0
