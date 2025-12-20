@@ -160,38 +160,41 @@ uploaded = st.file_uploader(
     help="Upload any image - it will be automatically preprocessed to match model requirements"
 )
 
-def preprocess_image(image: Image.Image) -> tuple[np.ndarray, Image.Image]:
+def preprocess_image(image_path):
     """
-    Preprocess image for model prediction.
-    Fashion MNIST has white items on black backgrounds, so we need to:
-    1. Convert to grayscale
-    2. Resize to 28x28
-    3. Invert colors (so dark items on light backgrounds match training data)
-    4. Normalize to [0,1]
+    Preprocess uploaded image to match Fashion MNIST format.
+    Includes contrast stretching to handle white-on-white issues.
+    """
+    # Load and convert to grayscale
+    img = Image.open(image_path).convert('L')
     
-    Returns: (preprocessed_array, preprocessed_image_for_display)
-    """
-    # Convert to grayscale and resize to 28x28
-    processed_img = image.convert("L").resize((28, 28), Image.Resampling.LANCZOS)
+    # Resize to 28x28
+    img = img.resize((28, 28), Image.Resampling.LANCZOS)
     
     # Convert to array
-    arr = np.array(processed_img).astype("float32")
+    arr = np.array(img).astype('float32')
     
-    # Invert the image: Fashion MNIST has white items on BLACK background
-    # Real photos typically have dark items on light backgrounds
-    # So we invert to match the training data format
+    # Invert colors (Background becomes dark)
+    # This works well for dark objects on light backgrounds
     arr = 255.0 - arr
     
-    # Normalize to [0,1]
+    # --- FIX START: Contrast Stretching ---
+    # If the image was white-on-white, the inverted image is now dark-on-dark.
+    # We need to stretch the pixel values so the brightest pixels become 
+    # pure white (255) and dark pixels stay dark.
+    
+    min_val = np.min(arr)
+    max_val = np.max(arr)
+    
+    # Avoid division by zero if image is solid color
+    if max_val - min_val > 0:
+        arr = (arr - min_val) / (max_val - min_val) * 255.0
+    # --- FIX END ---
+    
+    # Normalize to [0, 1] range for the model
     arr = arr / 255.0
     
-    # Create display image (inverted version that matches what model sees)
-    processed_display = Image.fromarray((arr * 255).astype(np.uint8))
-    
-    # Reshape for model input
-    arr = arr.reshape(1, 28, 28, 1)
-    
-    return arr, processed_display
+    return arr.reshape(1, 28, 28, 1), img
 
 if uploaded:
     bytes_data = uploaded.read()
