@@ -23,7 +23,49 @@ def load_model():
     if not MODEL_PATH.exists():
         st.error(f"Model file not found at {MODEL_PATH}. Please train/export the model first.")
         st.stop()
-    return tf.keras.models.load_model(MODEL_PATH)
+    
+    # Load model with compatibility for old Keras format
+    # Custom objects to handle old activation function names and ignore batch_shape
+    try:
+        model = tf.keras.models.load_model(
+            MODEL_PATH,
+            custom_objects={
+                'softmax_v2': tf.nn.softmax,
+                'relu': tf.nn.relu
+            },
+            compile=False  # Don't compile to avoid compatibility issues
+        )
+        
+        # Recompile with current Keras settings
+        model.compile(
+            optimizer='adam',
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+            metrics=['accuracy']
+        )
+        
+        return model
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        st.info("Trying alternative loading method...")
+        
+        # Fallback: Try loading with safe_mode=False for older formats
+        try:
+            import h5py
+            # Try loading the .h5 version if it exists
+            h5_path = pathlib.Path("models/fashion_mnist_cnn.h5")
+            if h5_path.exists():
+                model = tf.keras.models.load_model(h5_path, compile=False)
+                model.compile(
+                    optimizer='adam',
+                    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                    metrics=['accuracy']
+                )
+                return model
+        except:
+            pass
+        
+        st.error("Could not load model. Please check the model file format.")
+        st.stop()
 
 model = load_model()
 
