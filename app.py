@@ -21,7 +21,8 @@ MODEL_PATH = pathlib.Path("models/fashion_mnist_cnn.keras")
 def rebuild_model_architecture():
     """Rebuild the model architecture to load old weights"""
     model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.Input(shape=(28, 28, 1)),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu'),
         tf.keras.layers.MaxPooling2D((2, 2), strides=2),
         tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu'),
         tf.keras.layers.MaxPooling2D((2, 2), strides=2),
@@ -162,16 +163,35 @@ uploaded = st.file_uploader(
 def preprocess_image(image: Image.Image) -> tuple[np.ndarray, Image.Image]:
     """
     Preprocess image for model prediction.
+    Fashion MNIST has white items on black backgrounds, so we need to:
+    1. Convert to grayscale
+    2. Resize to 28x28
+    3. Invert colors (so dark items on light backgrounds match training data)
+    4. Normalize to [0,1]
+    
     Returns: (preprocessed_array, preprocessed_image_for_display)
     """
     # Convert to grayscale and resize to 28x28
     processed_img = image.convert("L").resize((28, 28), Image.Resampling.LANCZOS)
     
-    # Convert to array and normalize to [0,1]
-    arr = np.array(processed_img).astype("float32") / 255.0
+    # Convert to array
+    arr = np.array(processed_img).astype("float32")
+    
+    # Invert the image: Fashion MNIST has white items on BLACK background
+    # Real photos typically have dark items on light backgrounds
+    # So we invert to match the training data format
+    arr = 255.0 - arr
+    
+    # Normalize to [0,1]
+    arr = arr / 255.0
+    
+    # Create display image (inverted version that matches what model sees)
+    processed_display = Image.fromarray((arr * 255).astype(np.uint8))
+    
+    # Reshape for model input
     arr = arr.reshape(1, 28, 28, 1)
     
-    return arr, processed_img
+    return arr, processed_display
 
 if uploaded:
     bytes_data = uploaded.read()
