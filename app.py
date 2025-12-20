@@ -18,53 +18,85 @@ CLASS_NAMES = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
 
 MODEL_PATH = pathlib.Path("models/fashion_mnist_cnn.keras")
 
+def rebuild_model_architecture():
+    """Rebuild the model architecture to load old weights"""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D((2, 2), strides=2),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu'),
+        tf.keras.layers.MaxPooling2D((2, 2), strides=2),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    model.compile(
+        optimizer='adam',
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        metrics=['accuracy']
+    )
+    return model
+
 @st.cache_resource(show_spinner=True)
 def load_model():
     if not MODEL_PATH.exists():
         st.error(f"Model file not found at {MODEL_PATH}. Please train/export the model first.")
         st.stop()
     
-    # Load model with compatibility for old Keras format
-    # Custom objects to handle old activation function names and ignore batch_shape
+    # Try multiple loading strategies for compatibility with old Keras formats
+    
+    # Strategy 1: Try loading .h5 file directly (most compatible)
+    h5_path = pathlib.Path("models/fashion_mnist_cnn.h5")
+    if h5_path.exists():
+        try:
+            model = tf.keras.models.load_model(str(h5_path), compile=False)
+            model.compile(
+                optimizer='adam',
+                loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                metrics=['accuracy']
+            )
+            return model
+        except Exception as e:
+            st.warning(f"Could not load .h5 file: {e}")
+    
+    # Strategy 2: Rebuild architecture and load weights only
+    try:
+        model = rebuild_model_architecture()
+        # Try to load weights from the keras file
+        model.load_weights(MODEL_PATH)
+        return model
+    except Exception as e:
+        st.warning(f"Could not load weights into rebuilt model: {e}")
+    
+    # Strategy 3: Try loading with safe_mode=False (Keras 3.x)
+    try:
+        import keras
+        if hasattr(keras.saving, 'load_model'):
+            model = keras.saving.load_model(str(MODEL_PATH), safe_mode=False)
+            model.compile(
+                optimizer='adam',
+                loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                metrics=['accuracy']
+            )
+            return model
+    except Exception as e:
+        st.warning(f"Keras safe_mode=False failed: {e}")
+    
+    # Strategy 4: Standard load with custom objects
     try:
         model = tf.keras.models.load_model(
             MODEL_PATH,
-            custom_objects={
-                'softmax_v2': tf.nn.softmax,
-                'relu': tf.nn.relu
-            },
-            compile=False  # Don't compile to avoid compatibility issues
+            custom_objects={'softmax_v2': tf.nn.softmax, 'relu': tf.nn.relu},
+            compile=False
         )
-        
-        # Recompile with current Keras settings
         model.compile(
             optimizer='adam',
             loss=tf.keras.losses.SparseCategoricalCrossentropy(),
             metrics=['accuracy']
         )
-        
         return model
     except Exception as e:
-        st.error(f"Error loading model: {e}")
-        st.info("Trying alternative loading method...")
-        
-        # Fallback: Try loading with safe_mode=False for older formats
-        try:
-            import h5py
-            # Try loading the .h5 version if it exists
-            h5_path = pathlib.Path("models/fashion_mnist_cnn.h5")
-            if h5_path.exists():
-                model = tf.keras.models.load_model(h5_path, compile=False)
-                model.compile(
-                    optimizer='adam',
-                    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-                    metrics=['accuracy']
-                )
-                return model
-        except:
-            pass
-        
-        st.error("Could not load model. Please check the model file format.")
+        st.error(f"All loading strategies failed. Last error: {e}")
+        st.info("💡 **Solution**: The model was saved in an old Keras format. Please use the .h5 model file or retrain with the current Keras version.")
         st.stop()
 
 model = load_model()
